@@ -12,11 +12,9 @@ In this post we'll implement a basic server-side OpenID Connect flow, the author
 
 == Prerequisites
 
-TODO:
+To follow along with this guide, you'll need to have an OAuth client set up on an identity provider that supports OIDC. You'll need to know the base URL of your identity provider as well as the client ID and secret. You'll also need to configure the allowed redirect URL for the OAuth client, which is `http://localhost:8080/oauth/post-login` if you follow along exactly.
 
- - An OIDC server
- - A configured client
- - ...
+Support for OIDC is extremely widespread, so you can probably use cloud solutions from Auth0, Google, Microsoft, or Amazon, to name a few. I'm personally a fan of #link("https://www.keycloak.org/")[Keycloak], a highly capable open source identity provider. You can easily set up a #link("https://www.keycloak.org/getting-started/getting-started-docker")[local instance using Docker].
 
 == Setting up the project
 
@@ -576,7 +574,7 @@ To decode the JWT, we'll use #link("https://hexdocs.pm/ywt_erlang/")[ywt]. Decod
 gleam add ywt_core@1 ywt_erlang@1
 ```
 
-Let's update that function to put together our user record. I should note that while "sub" (subject) is guaranteed to be present, "name" is not. Different identity providers will put different claims in their access tokens, and you may need to request a specific scope, or you may need to call the userinfo endpoint to get this information.
+Let's update that function to put together our user record. There are a few caveats here. Not all identity providers return a JWT as their access token, but Keycloak does. OIDC specifies that the ID token must be a JWT, but our OAuth library doesn't return it. In addition, the "name" claim may or may not be in the JWT, depending on the scope requested and how the access token has been configured within the identity provider. If this doesn't work with your identity provider, use the access token to query the userinfo endpoint instead.
 
 ```gleam
 fn token_response_to_user(
