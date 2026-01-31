@@ -43,8 +43,8 @@ pub type OidcClientConfig {
 const oidc_discovery_endpoint = ".well-known/openid-configuration"
 
 pub fn configure() {
+  // set up the session store
   let config = storail.Config(storage_path: "tmp/storage")
-
   let sessions =
     storail.Collection(
       name: "sessions",
@@ -53,16 +53,17 @@ pub fn configure() {
       config:,
     )
 
+  // get the OIDC discovery data
   let assert Ok(server_url) =
     envoy.get("OIDC_SERVER_URL") |> result.try(uri.parse)
   let assert Ok(req) =
     uri.parse(oidc_discovery_endpoint)
     |> result.try(uri.merge(server_url, _))
     |> result.try(request.from_uri)
-
   let assert Ok(res) = httpc.send(req)
   let assert Ok(oidc_config) = json.parse(res.body, discovery_data_decoder())
 
+  // create our client configuration (redirect URI and credentials)
   let assert Ok(app_base_url) =
     envoy.get("APP_BASE_URL") |> result.try(uri.parse)
   let assert Ok(redirect_uri) =
@@ -143,19 +144,9 @@ fn post_login_handler(req: wisp.Request, ctx: Context) -> wisp.Response {
 
   use token_response <- perform_token_request(ctx, code)
   use user <- token_response_to_user(token_response)
-  let _ctx = set_session(ctx, ctx.session.0, Authenticated(user))
+  let #(session_id, _) = ctx.session
+  let _ctx = set_session(ctx, session_id, Authenticated(user))
   wisp.redirect("/")
-}
-
-fn require_param(
-  req: wisp.Request,
-  name: String,
-  next: fn(String) -> wisp.Response,
-) -> wisp.Response {
-  case wisp.get_query(req) |> list.key_find(name) {
-    Ok(value) -> next(value)
-    Error(_) -> auth_error("Missing parameter: " <> name, 400)
-  }
 }
 
 fn verify_state(
@@ -220,6 +211,29 @@ fn token_response_to_user(
   next(User(id: "123", name: "Joe"))
 }
 
+/// Render an authentication error page with the given `message` and `status`.
+fn auth_error(message: String, status: Int) -> wisp.Response {
+  wisp.html_response(
+    "<h1>Authentication error</h1><p>" <> message <> "</p>",
+    status,
+  )
+}
+
+/// Calls `next` with the value of the named request parameter,
+/// or renders an error page.
+fn require_param(
+  req: wisp.Request,
+  name: String,
+  next: fn(String) -> wisp.Response,
+) -> wisp.Response {
+  case wisp.get_query(req) |> list.key_find(name) {
+    Ok(value) -> next(value)
+    Error(_) -> auth_error("Missing parameter: " <> name, 400)
+  }
+}
+
+/// Calls `next` with the `Ok` value of the given `Result`,
+/// or logs the `Error` and renders an error page with the `message`.
 fn require_ok(
   result: Result(a, b),
   message: String,
@@ -235,16 +249,11 @@ fn require_ok(
   }
 }
 
-fn auth_error(message: String, code: Int) -> wisp.Response {
-  wisp.html_response(
-    "<h1>Authentication error</h1><p>" <> message <> "</p>",
-    code,
-  )
-}
-
 fn logout_handler(req: wisp.Request, ctx: Context) -> wisp.Response {
+  use <- wisp.require_method(req, http.Post)
   case ctx.session {
     #(id, Authenticated(_)) | #(id, Authenticating(_)) -> {
+      // if we can't write to our session store, panic
       let assert Ok(_) = storail.delete(storail.key(ctx.sessions, id))
       wisp.redirect("/")
       |> wisp.set_cookie(req, session_cookie, id, wisp.Signed, 0)

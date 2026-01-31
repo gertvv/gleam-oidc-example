@@ -1,8 +1,9 @@
 [tools]
 erlang = "28"
 gleam = "1.14"
+just = "latest"
 rebar = "3"
-typst = "latest"
+typst = "0.14"
 
 [env]
 SECRET_KEY_BASE = "top_secret_cookies"
