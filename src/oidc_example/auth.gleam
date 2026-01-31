@@ -12,6 +12,7 @@ import gleam/result
 import gleam/uri.{type Uri}
 import storail
 import wisp
+import ywt
 
 pub type Context {
   Context(
@@ -119,6 +120,7 @@ pub fn require_user(
 }
 
 fn login_handler(req: wisp.Request, ctx: Context) -> wisp.Response {
+  use <- wisp.require_method(req, http.Post)
   let session_id = flwr_oauth2.random_state32().value
   let state = flwr_oauth2.random_state32()
   let _ctx = set_session(ctx, session_id, Authenticating(state.value))
@@ -128,7 +130,7 @@ fn login_handler(req: wisp.Request, ctx: Context) -> wisp.Response {
       response_type: flwr_oauth2.Code,
       redirect_uri: option.Some(ctx.oidc_client.redirect_uri),
       client_id: flwr_oauth2.ClientId(ctx.oidc_client.client_id),
-      scope: ["openid"],
+      scope: ["openid", "profile"],
       state: option.Some(state),
     ))
     |> uri.to_string,
@@ -205,10 +207,18 @@ fn perform_token_request(
 }
 
 fn token_response_to_user(
-  _res: flwr_oauth2.AccessTokenResponse,
+  res: flwr_oauth2.AccessTokenResponse,
   next: fn(User) -> wisp.Response,
 ) -> wisp.Response {
-  next(User(id: "123", name: "Joe"))
+  let decoder = {
+    use id <- decode.field("sub", decode.string)
+    use name <- decode.field("name", decode.string)
+    decode.success(User(id:, name:))
+  }
+  case ywt.decode_unsafely_without_validation(res.access_token, decoder) {
+    Ok(user) -> next(user)
+    Error(_) -> auth_error("Unable to decode JWT", 500)
+  }
 }
 
 /// Render an authentication error page with the given `message` and `status`.

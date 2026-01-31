@@ -1,3 +1,5 @@
+#set raw(syntaxes: "gleam.sublime-syntax")
+
 #html.elem("h1")[
   Gert van Valkenhoef
 ]
@@ -101,7 +103,7 @@ fn home_handler(req: wisp.Request, _ctx: Context) -> wisp.Response {
   <p>
     <a href='/profile'>View profile</a>
   </p>
-  <form action='/login'>
+  <form action='/login' method='post'>
     <input type='submit' value='Login'/>
   </form>
   "
@@ -343,9 +345,9 @@ fn home_handler(req: wisp.Request, ctx: Context) -> wisp.Response {
     </p>
     " <> case auth.is_authenticated(ctx.auth) {
       False ->
-        "<form action='/login'><input type='submit' value='Login'/></form>"
+        "<form action='/login' method='post'><input type='submit' value='Login'/></form>"
       True ->
-        "<form action='/logout'><input type='submit' value='Logout'></form>"
+        "<form action='/logout' method='post'><input type='submit' value='Logout'></form>"
     } }
   |> wisp.html_response(200)
 }
@@ -381,6 +383,7 @@ Using this, we can set up our login handler, which will first generate a new ses
 
 ```gleam
 fn login_handler(req: wisp.Request, ctx: Context) -> wisp.Response {
+  use <- wisp.require_method(req, http.Post)
   let session_id = flwr_oauth2.random_state32().value
   let state = flwr_oauth2.random_state32()
   let _ctx = set_session(ctx, session_id, Authenticating(state.value))
@@ -390,7 +393,7 @@ fn login_handler(req: wisp.Request, ctx: Context) -> wisp.Response {
       response_type: flwr_oauth2.Code,
       redirect_uri: option.Some(ctx.oidc_client.redirect_uri),
       client_id: flwr_oauth2.ClientId(ctx.oidc_client.client_id),
-      scope: ["openid"],
+      scope: ["openid", "profile"],
       state: option.Some(state),
     ))
     |> uri.to_string,
@@ -567,8 +570,32 @@ It is pretty simple - if there is a non-trivial session, we delete it from stora
 
 == Decoding the OIDC token
 
-TODO...
+To decode the JWT, we'll use #link("https://hexdocs.pm/ywt_erlang/")[ywt]. Decoding it is easy enough but verifying can get complicated, so a library is well worth it.
 
+```sh
+gleam add ywt_core@1 ywt_erlang@1
+```
+
+Let's update that function to put together our user record. I should note that while "sub" (subject) is guaranteed to be present, "name" is not. Different identity providers will put different claims in their access tokens, and you may need to request a specific scope, or you may need to call the userinfo endpoint to get this information.
+
+```gleam
+fn token_response_to_user(
+  res: flwr_oauth2.AccessTokenResponse,
+  next: fn(User) -> wisp.Response,
+) -> wisp.Response {
+  let decoder = {
+    use id <- decode.field("sub", decode.string)
+    use name <- decode.field("firstName", decode.string)
+    decode.success(User(id:, name:))
+  }
+  case ywt.decode_unsafely_without_validation(res.access_token, decoder) {
+    Ok(user) -> next(user)
+    Error(_) -> auth_error("Unable to decode JWT", 500)
+  }
+}
+```
+
+Now, you'll probably notice some stern warnings in the documentation of that unsafe function we're using. In this case, we're getting the token straight from the identity provider itself, so we can trust it. But if instead we were decoding a token received from another app, we'd really need to verify it.
 
 #html.elem("link", attrs: (rel: "stylesheet", href: "/css/gert.css?v2", type: "text/css"))
 #html.elem("link", attrs: (rel: "stylesheet", href: "https://fonts.googleapis.com/css?family=Raleway", type: "text/css"))

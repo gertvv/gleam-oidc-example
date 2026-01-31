@@ -54,9 +54,9 @@ fn home_handler(req: wisp.Request, ctx: Context) -> wisp.Response {
     </p>
     " <> case auth.is_authenticated(ctx.auth) {
       False ->
-        "<form action='/login'><input type='submit' value='Login'/></form>"
+        "<form action='/login' method='post'><input type='submit' value='Login'/></form>"
       True ->
-        "<form action='/logout'><input type='submit' value='Logout'></form>"
+        "<form action='/logout' method='post'><input type='submit' value='Logout'></form>"
     } }
   |> wisp.html_response(200)
 }

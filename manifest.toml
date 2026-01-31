@@ -2,6 +2,7 @@
 # You typically do not need to edit this file
 
 packages = [
+  { name = "bigi", version = "4.1.0", build_tools = ["gleam"], requirements = ["gleam_stdlib"], otp_app = "bigi", source = "hex", outer_checksum = "1B95328C598546D86132A06B84202C1F4FFA9D32EE4D680763C0309861CB6A4A" },
   { name = "directories", version = "1.2.0", build_tools = ["gleam"], requirements = ["envoy", "gleam_stdlib", "platform", "simplifile"], otp_app = "directories", source = "hex", outer_checksum = "D13090CFCDF6759B87217E8DDD73A75903A700148A82C1D33799F333E249BF9E" },
   { name = "envoy", version = "1.1.0", build_tools = ["gleam"], requirements = ["gleam_stdlib"], otp_app = "envoy", source = "hex", outer_checksum = "850DA9D29D2E5987735872A2B5C81035146D7FE19EFC486129E44440D03FD832" },
   { name = "exception", version = "2.1.0", build_tools = ["gleam"], requirements = ["gleam_stdlib"], otp_app = "exception", source = "hex", outer_checksum = "329D269D5C2A314F7364BD2711372B6F2C58FA6F39981572E5CA68624D291F8C" },
@@ -30,6 +31,8 @@ packages = [
   { name = "storail", version = "3.2.0", build_tools = ["gleam"], requirements = ["directories", "filepath", "gleam_crypto", "gleam_json", "gleam_stdlib", "simplifile"], otp_app = "storail", source = "hex", outer_checksum = "0C8ACEEE01259514C3D4F66E811B9F6F9592C7A6EBC073A58E4A6FE97A7AE505" },
   { name = "telemetry", version = "1.3.0", build_tools = ["rebar3"], requirements = [], otp_app = "telemetry", source = "hex", outer_checksum = "7015FC8919DBE63764F4B4B87A95B7C0996BD539E0D499BE6EC9D7F3875B79E6" },
   { name = "wisp", version = "2.2.0", build_tools = ["gleam"], requirements = ["directories", "exception", "filepath", "gleam_crypto", "gleam_erlang", "gleam_http", "gleam_json", "gleam_stdlib", "houdini", "logging", "marceau", "mist", "simplifile"], otp_app = "wisp", source = "hex", outer_checksum = "655163D4DE19E3DD4AC75813A991BFD5523CB4FF2FC5F9F58FD6FB39D5D1806D" },
+  { name = "ywt_core", version = "1.1.0", build_tools = ["gleam"], requirements = ["bigi", "gleam_json", "gleam_stdlib", "gleam_time"], otp_app = "ywt_core", source = "hex", outer_checksum = "430040D5D4FBC2689448B3AE6A11D4FDBA5E695B844C3306A46713028D03B69F" },
+  { name = "ywt_erlang", version = "1.0.0", build_tools = ["gleam"], requirements = ["gleam_json", "gleam_stdlib", "gleam_time", "ywt_core"], otp_app = "ywt_erlang", source = "hex", outer_checksum = "EB2C8D36CDF9B0F4081F228396C6B09D5D2BDF01F6597298B97CD7BD52F29AB8" },
 ]
 
 [requirements]
@@ -44,3 +47,5 @@ gleeunit = { version = ">= 1.0.0 and < 2.0.0" }
 mist = { version = ">= 5.0.4 and < 6.0.0" }
 storail = { version = ">= 3.2.0 and < 4.0.0" }
 wisp = { version = ">= 2.2.0 and < 3.0.0" }
+ywt_core = { version = ">= 1.1.0 and < 2.0.0" }
+ywt_erlang = { version = ">= 1.0.0 and < 2.0.0" }
