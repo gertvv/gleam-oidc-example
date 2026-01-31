@@ -1,6 +1,7 @@
 import envoy
 import gleam/erlang/process
 import gleam/http
+import gleam/string
 import mist
 import oidc_example/auth
 import wisp
@@ -43,27 +44,35 @@ pub fn router(req: wisp.Request, ctx: Context) -> wisp.Response {
   }
 }
 
-fn home_handler(req: wisp.Request, _ctx: Context) -> wisp.Response {
+fn home_handler(req: wisp.Request, ctx: Context) -> wisp.Response {
   use <- wisp.require_method(req, http.Get)
 
-  "
-  <h1>🌟 Gleam OIDC Example 🌟</h1>
-  <p>
-    <a href='/profile'>View profile</a>
-  </p>
-  <form action='/login'>
-    <input type='submit' value='Login'/>
-  </form>
-  "
+  { "
+    <h1>🌟 Gleam OIDC Example 🌟</h1>
+    <p>
+      <a href='/profile'>View profile</a>
+    </p>
+    " <> case auth.is_authenticated(ctx.auth) {
+      False ->
+        "<form action='/login'><input type='submit' value='Login'/></form>"
+      True ->
+        "<form action='/logout'><input type='submit' value='Logout'></form>"
+    } }
   |> wisp.html_response(200)
 }
 
-fn profile_handler(req: wisp.Request, _ctx: Context) -> wisp.Response {
+fn profile_handler(req: wisp.Request, ctx: Context) -> wisp.Response {
   use <- wisp.require_method(req, http.Get)
+  use user <- auth.require_user(ctx.auth)
 
-  "
-  <h1>Unauthorized</h1>
-  <p>You must log in to access this page</p>
-  "
-  |> wisp.html_response(401)
+  [
+    "<h1>Profile</h1>",
+    "<ul><li>ID: ",
+    user.id,
+    "</li><li>Name: ",
+    user.name,
+    "</li></ul><p><a href='/'>Home</a></p>",
+  ]
+  |> string.join("")
+  |> wisp.html_response(200)
 }
