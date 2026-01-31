@@ -410,7 +410,7 @@ Now the login button will take us to the identity provider's login flow, and whe
 
 == Obtaining the OIDC token
 
-All sorts of things can go wrong when we handle the callback from the identity provider, so we need some helper methods. First, a convenient method for rendering an authentication error page.
+All sorts of things can go wrong when we handle the callback from the identity provider, so we need some helper methods.
 
 ```gleam
 /// Render an authentication error page with the given `message` and `status`.
@@ -571,7 +571,7 @@ It is pretty simple - if there is a non-trivial session, we delete it from stora
 To decode the JWT, we'll use #link("https://hexdocs.pm/ywt_erlang/")[ywt]. Decoding it is easy enough but verifying can get complicated, so a library is well worth it.
 
 ```sh
-gleam add ywt_core@1 ywt_erlang@1
+gleam add ywt_core@1 ywt_erlang@1 gleam_time
 ```
 
 Let's update that function to put together our user record. There are a few caveats here. Not all identity providers return a JWT as their access token, but Keycloak does. OIDC specifies that the ID token must be a JWT, but our OAuth library doesn't return it. In addition, the "name" claim may or may not be in the JWT, depending on the scope requested and how the access token has been configured within the identity provider. If this doesn't work with your identity provider, use the access token to query the userinfo endpoint instead.
@@ -594,6 +594,67 @@ fn token_response_to_user(
 ```
 
 Now, you'll probably notice some stern warnings in the documentation of that unsafe function we're using. In this case, we're getting the token straight from the identity provider itself, so we can trust it. But if instead we were decoding a token received from another app, we'd really need to verify it.
+
+== Verifying the JWT
+
+Although verifying the JWT is not strictly necessary in this scenario, it is so important when you receive an access token from a third party, that we should explore how it is done.
+
+To verify the tokens, we need the signing keys. These are available from the JWKS (JSON Web Key Set) URI, which we can identify from the OIDC discovery data. We'll also add the issuer to the discovery data so we can verify the issuer ("iss") claim. Let's add the required properties to the discovery data and context.
+
+```gleam
+pub type Context {
+  Context(
+    session: #(String, Session),
+    sessions: storail.Collection(Session),
+    oidc_config: DiscoveryData,
+    oidc_client: OidcClientConfig,
+    jwks: List(verify_key.VerifyKey),
+  )
+}
+
+pub type DiscoveryData {
+  DiscoveryData(
+    issuer: Uri,
+    authorization_endpoint: Uri,
+    token_endpoint: Uri,
+    jwks_uri: Uri,
+  )
+}
+```
+
+Then we can retrieve and decode the keys in our `configure()` function, again crashing if this critical data is not available.
+
+```gleam
+  // get the signing key set (JWKS)
+  let assert Ok(jwks_req) = request.from_uri(oidc_config.jwks_uri)
+  let assert Ok(jwks_res) = httpc.send(jwks_req)
+  let assert Ok(jwks) = json.parse(jwks_res.body, verify_key.set_decoder())
+
+  Context(#("", NoSession), sessions:, oidc_config:, oidc_client:, jwks:)
+```
+
+Finally, we can verify the JWT in `access_token_to_user()`.
+
+```gleam
+  let claims = [
+    claim.expires_at(max_age: duration.hours(1), leeway: duration.minutes(5)),
+    claim.issuer(uri.to_string(ctx.oidc_config.issuer), []),
+  ]
+  case ywt.decode(res.access_token, decoder, claims, ctx.jwks) {
+```
+
+Here we're checking the "expires at" and "issuer" claims are as expected. If you're building an API you'll also want to check the "audience" claim. To set all of that up correctly you'll need to get pretty deep into the _authorization_ aspects of your identity provider, and this guide is about _authentication_, so we'll leave it here.
+
+== What's next?
+
+There is so much more you might want from a production OIDC implementation:
+
+ 1. Store and use the access token to make API requests on the user's behalf.
+ 2. Refresh user tokens before they expire.
+ 3. Better integrate our error responses with the rest of the application.
+ 4. Perhaps we want to store other data in the session, or create the session earlier on, such as when the user may add items to their shopping cart before logging in.
+ 5. You may want to ensure the user is logged out of the identity provider when they log out of the application (relying party initiated logout).
+ 6. You may want to ensure the user is logged out of the application if they log out of the identity provider (back-channel logout).
 
 #html.elem("link", attrs: (rel: "stylesheet", href: "/css/gert.css?v2", type: "text/css"))
 #html.elem("link", attrs: (rel: "stylesheet", href: "https://fonts.googleapis.com/css?family=Raleway", type: "text/css"))

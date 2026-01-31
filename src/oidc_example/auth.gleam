@@ -9,10 +9,13 @@ import gleam/json
 import gleam/list
 import gleam/option
 import gleam/result
+import gleam/time/duration
 import gleam/uri.{type Uri}
 import storail
 import wisp
 import ywt
+import ywt/claim
+import ywt/verify_key
 
 pub type Context {
   Context(
@@ -20,6 +23,7 @@ pub type Context {
     sessions: storail.Collection(Session),
     oidc_config: DiscoveryData,
     oidc_client: OidcClientConfig,
+    jwks: List(verify_key.VerifyKey),
   )
 }
 
@@ -34,7 +38,12 @@ pub type User {
 }
 
 pub type DiscoveryData {
-  DiscoveryData(authorization_endpoint: Uri, token_endpoint: Uri)
+  DiscoveryData(
+    issuer: Uri,
+    authorization_endpoint: Uri,
+    token_endpoint: Uri,
+    jwks_uri: Uri,
+  )
 }
 
 pub type OidcClientConfig {
@@ -74,7 +83,12 @@ pub fn configure() {
   let assert Ok(client_secret) = envoy.get("OIDC_CLIENT_SECRET")
   let oidc_client = OidcClientConfig(redirect_uri:, client_id:, client_secret:)
 
-  Context(#("", NoSession), sessions:, oidc_config:, oidc_client:)
+  // get the signing key set (JWKS)
+  let assert Ok(jwks_req) = request.from_uri(oidc_config.jwks_uri)
+  let assert Ok(jwks_res) = httpc.send(jwks_req)
+  let assert Ok(jwks) = json.parse(jwks_res.body, verify_key.set_decoder())
+
+  Context(#("", NoSession), sessions:, oidc_config:, oidc_client:, jwks:)
 }
 
 const session_cookie = "session_id"
@@ -145,7 +159,7 @@ fn post_login_handler(req: wisp.Request, ctx: Context) -> wisp.Response {
   use <- verify_state(ctx, state)
 
   use token_response <- perform_token_request(ctx, code)
-  use user <- token_response_to_user(token_response)
+  use user <- token_response_to_user(token_response, ctx)
   let #(session_id, _) = ctx.session
   let _ctx = set_session(ctx, session_id, Authenticated(user))
   wisp.redirect("/")
@@ -208,6 +222,7 @@ fn perform_token_request(
 
 fn token_response_to_user(
   res: flwr_oauth2.AccessTokenResponse,
+  ctx: Context,
   next: fn(User) -> wisp.Response,
 ) -> wisp.Response {
   let decoder = {
@@ -215,7 +230,11 @@ fn token_response_to_user(
     use name <- decode.field("name", decode.string)
     decode.success(User(id:, name:))
   }
-  case ywt.decode_unsafely_without_validation(res.access_token, decoder) {
+  let claims = [
+    claim.expires_at(max_age: duration.hours(1), leeway: duration.minutes(5)),
+    claim.issuer(uri.to_string(ctx.oidc_config.issuer), []),
+  ]
+  case ywt.decode(res.access_token, decoder, claims, ctx.jwks) {
     Ok(user) -> next(user)
     Error(_) -> auth_error("Unable to decode JWT", 500)
   }
@@ -288,12 +307,19 @@ fn set_session(ctx: Context, id: String, session: Session) -> Context {
 // --- JSON encoders and decoders ---
 
 fn discovery_data_decoder() -> decode.Decoder(DiscoveryData) {
+  use issuer <- decode.field("issuer", uri_decoder())
   use authorization_endpoint <- decode.field(
     "authorization_endpoint",
     uri_decoder(),
   )
   use token_endpoint <- decode.field("token_endpoint", uri_decoder())
-  decode.success(DiscoveryData(authorization_endpoint:, token_endpoint:))
+  use jwks_uri <- decode.field("jwks_uri", uri_decoder())
+  decode.success(DiscoveryData(
+    issuer:,
+    authorization_endpoint:,
+    token_endpoint:,
+    jwks_uri:,
+  ))
 }
 
 fn uri_decoder() -> decode.Decoder(Uri) {
