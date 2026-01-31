@@ -33,6 +33,9 @@ pub fn router(req: wisp.Request, ctx: Context) -> wisp.Response {
   use req <- wisp.handle_head(req)
   use req <- wisp.csrf_known_header_protection(req)
 
+  use auth_context <- auth.middleware(req, ctx.auth)
+  let ctx = Context(auth: auth_context)
+
   case wisp.path_segments(req) {
     [] -> home_handler(req, ctx)
     ["profile"] -> profile_handler(req, ctx)

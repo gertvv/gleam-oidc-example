@@ -184,7 +184,7 @@ pub type DiscoveryData {
 }
 ```
 
-Now we can flesh out our `configure` function:
+Now we can flesh out our `configure` function (TODO: update to add OidcClientConfig):
 
 ```gleam
 const oidc_discovery_endpoint = ".well-known/openid-configuration"
@@ -232,4 +232,100 @@ Because we added an echo statement, when we run our application we should be abl
 
 == Initiating the OIDC flow
 
-TODO ...
+First, we define our middleware in the `auth` module, which will handle the routes we need for the user to initiate the login process, for the callback from the identity provider, and for the user to log out. It will also get the user's session from storage based on a signed cookie included in the request.
+
+```gleam
+const session_cookie = "session_id"
+
+pub fn middleware(
+  req: wisp.Request,
+  ctx: Context,
+  next: fn(Context) -> wisp.Response,
+) -> wisp.Response {
+  let ctx =
+    wisp.get_cookie(req, session_cookie, wisp.Signed)
+    |> result.map(get_session(ctx, _))
+    |> result.unwrap(ctx)
+
+  case wisp.path_segments(req) {
+    ["login"] -> login_handler(req, ctx)
+    ["logout"] -> logout_handler(req, ctx)
+    ["oauth", "post-login"] -> post_login_handler(req, ctx)
+    _ -> next(ctx)
+  }
+}
+
+fn login_handler(req: wisp.Request, ctx: Context) -> wisp.Response {
+  todo
+}
+
+fn logout_handler(req: wisp.Request, ctx: Context) -> wisp.Response {
+  todo
+}
+
+fn post_login_handler(req: wisp.Request, ctx: Context) -> wisp.Response {
+  todo
+}
+
+fn get_session(ctx: Context, id: String) -> Context {
+  let session =
+    storail.read(storail.key(ctx.sessions, id))
+    |> result.unwrap(NoSession)
+  Context(..ctx, session:)
+}
+```
+
+And we modify the router to use the middleware:
+
+```gleam
+  use req <- wisp.csrf_known_header_protection(req)
+
+  use auth_context <- auth.middleware(req, ctx.auth)
+  let ctx = Context(auth: auth_context)
+
+  case wisp.path_segments(req) {
+```
+
+Now, our application should still run, but the login route will return a 500 error rather than a 404. Progress?
+
+We'll use `flwr_oauth2`, an OAuth2 library that doesn't assume anything - which means we'll have to do some of the work, but there is no magic. A great fit for Gleam's philosophy.
+
+```sh
+gleam add flwr_oauth2@1
+```
+
+Using this, we can set up our login handler, which will first generate a new session ID, and create a new session in Authenticating status with a randomly generated state. The OAuth library generates the redirect for us, and we set the session cookie on the same request.
+
+```gleam
+fn login_handler(req: wisp.Request, ctx: Context) -> wisp.Response {
+  let session_id = flwr_oauth2.random_state32().value
+  let state = flwr_oauth2.random_state32()
+  let _ctx = set_session(ctx, session_id, Authenticating(state.value))
+  wisp.redirect(
+    flwr_oauth2.make_redirect_uri(flwr_oauth2.AuthorizationCodeGrantRedirectUri(
+      oauth_server: ctx.oidc_config.authorization_endpoint,
+      response_type: flwr_oauth2.Code,
+      redirect_uri: option.Some(ctx.oidc_client.redirect_uri),
+      client_id: flwr_oauth2.ClientId(ctx.oidc_client.client_id),
+      scope: ["openid"],
+      state: option.Some(state),
+    ))
+    |> uri.to_string,
+  )
+  |> wisp.set_cookie(req, session_cookie, session_id, wisp.Signed, 60 * 60 * 24)
+}
+```
+
+Now the login button will take us to the identity provider's login flow, and when that completes we end up at the post-login handler, which crashes with a 500 error because we didn't implement it yet.
+
+== Obtaining the OIDC token
+
+TODO...
+
+== Decoding the OIDC token
+
+TODO...
+
+== Logging out
+
+TODO...
