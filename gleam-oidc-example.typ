@@ -10,6 +10,8 @@ _February 2026_
 
 In this post we'll implement a basic server-side OpenID Connect flow, the authorization code flow with client credentials. We'll use the Erlang (BEAM) back-end. This post assumes you have a basic understanding of Gleam and know how to work with JSON in Gleam.
 
+The full source code is available here: https://github.com/gertvv/gleam-oidc-example/
+
 == Prerequisites
 
 To follow along with this guide, you'll need to have an OAuth client set up on an identity provider that supports OIDC. You'll need to know the base URL of your identity provider as well as the client ID and secret. You'll also need to configure the allowed redirect URL for the OAuth client, which is `http://localhost:8080/oauth/post-login` if you follow along exactly.
